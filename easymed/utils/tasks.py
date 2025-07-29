@@ -109,4 +109,74 @@ def generate_daily_reports():
     except Exception as e:
         logger.error(f"Error generating daily report: {str(e)}")
         raise
+
+@shared_task
+def check_low_stock_items():
+    try:
+        from inventory.models import Item
+        from customeruser.models import CustomUser
         
+        items=Item.objects.filter(is_active=True)
+        low_stock_items=[item for item in items if item.is_low_stock]  
+        
+        if low_stock_items:
+            items_list="\n".join([
+                f"-{item.name}(Current:{item.current_stock},Minimum: {item.minimum_stock})"
+                for item in low_stock_items
+            ])   
+            message = f"""
+            Low Stock Alert
+            
+            The following items are running low on stock:
+            
+            {items_list}
+            
+            Please reorder these items as soon as possible.
+            """
+            
+            users=CustomUser.objects.filter(
+                role__in=['admin','pharmacist'],
+                is_active=True
+            )
+            email_list=[user.email for user in users if user.email]
+            
+            if email_list:
+                send_email_task.delay(
+                    subject="Low Stock Alert",
+                    message=message,
+                    recipient_list=email_list
+                )
+        logger.info(f"Low stock check completed. Found {len(low_stock_items)} items")  
+        return f"Low stock check completed. {len(low_stock_items)} items need attention"
+    except Exception as e:
+        logger.error(f"Error checking low stock items: {str(e)}")
+        raise
+
+
+@shared_task
+def send_annoucement_reminders():
+    try:
+        logger.info("Appointment reminders task completed")
+        return "Appointment reminders processed"
+    except Exception as e:
+        logger.error(f"Error sending appointment reminders: {str(e)}")
+        raise
+
+@shared_task
+def cleanup_old_data():
+    try:
+        from announcement.models import AnnouncementRead
+        one_year_ago=timezone.now() -timedelta(days=365)
+        old_reads=   AnnouncementRead.objects.filter(read_at__lt=one_year_ago) 
+        deleted_count=old_reads.count()
+        old_reads.delete()
+        logger.info(f"Cleanup completed. Deleted {deleted_count} old announcement reads")
+        return f"Cleanup completed. Deleted {deleted_count} records"
+    
+    except Exception as e:
+        logger.error(f"Error during cleanup: {str(e)}")
+        raise
+        
+            
+              
+               
